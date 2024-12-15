@@ -1,21 +1,27 @@
 import './style.css'
-import globals from './globals.js'
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { BoxLineGeometry } from 'three/addons/geometries/BoxLineGeometry.js';
+import GLOBALS from './globals.js'
+import * as sound from './sound.js'
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { BoxLineGeometry } from 'three/addons/geometries/BoxLineGeometry.js'
 import Stats from 'three/addons/libs/stats.module.js'
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
-import RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER from '@dimforge/rapier3d-compat'
 
 // THREE
 let scene, camera, controls, renderer;
 let clock;
 let stats, guiOptions;
-let planes;
+let intersectables; // THREE objects used for raycast
 
 // RAPIER
 let gravity, world;
-let dynamicBodies;
+let eventQueue;
+
+// other
+let objects; // KEY: collision handler; VALUE: [THREE Mesh, Rapier RigidBody, shape, size, color] if dynamic body, null otherwise
+let mouseDownTime;
+let velocities;
 
 await RAPIER.init();
 init();
@@ -23,10 +29,10 @@ init();
 function createScene() {
 
     function createWall(pX, pY, pZ, rX, rY, rZ, shadow=false) {
-        const d = globals.boxDimensions;
+        const d = GLOBALS.boxDimensions;
         const wall = new THREE.Mesh(
-            new THREE.BoxGeometry(d.x+0.1, globals.wallThickness, d.z+0.1),
-            new THREE.ShadowMaterial({ color: globals.wallColor })
+            new THREE.BoxGeometry(d.x+0.1, GLOBALS.wallThickness, d.z+0.1),
+            new THREE.ShadowMaterial({ color: GLOBALS.wallColor })
         );
         wall.position.set(pX, pY, pZ);
         wall.rotation.set(rX, rY, rZ);
@@ -38,39 +44,61 @@ function createScene() {
             .setTranslation(pX, pY, pZ)
             .setRotation({ w: q.w, x: q.x, y: q.y, z: q.z })
         );
-        const wallShape = RAPIER.ColliderDesc.cuboid(d.x/2, globals.wallThickness/2, d.z/2);
-        world.createCollider(wallShape, wallBody);
+        const wallShape = RAPIER.ColliderDesc.cuboid(d.x/2, GLOBALS.wallThickness/2, d.z/2);
+        const collider = world.createCollider(wallShape, wallBody);
+        objects.set(collider.handle, null);
+    }
+
+    function createPlane(pX, pY, pZ, rX, rY, rZ) {
+        const plane = new THREE.Mesh(
+            new THREE.BoxGeometry(GLOBALS.boxDimensions.x, 0.01, GLOBALS.boxDimensions.z),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 })
+        );
+        plane.position.set(pX, pY, pZ);
+        plane.rotation.set(rX, rY, rZ);
+        scene.add(plane);
+        intersectables.push(plane);
+    }
+
+    function createBox(pX, pY, pZ) {
+        const box = new THREE.Mesh(
+            new THREE.BoxGeometry(GLOBALS.boxDimensions.x/2, GLOBALS.boxDimensions.y/2, GLOBALS.boxDimensions.z/2),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 })
+        );
+        box.position.set(pX, pY, pZ);
+        scene.add(box);
+        intersectables.push(box);
     }
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color( globals.backgroundColor );
+    scene.background = new THREE.Color( GLOBALS.backgroundColor );
 
     // lights
-    const fillLight = new THREE.HemisphereLight( globals.lightColor, 0x00668d, 1.5 );
+    const fillLight = new THREE.HemisphereLight( GLOBALS.lightColor, 0x00668d, 1.5 );
     scene.add( fillLight );
 
-    const directionalLight = new THREE.DirectionalLight( globals.lightColor, 2.5 );
-    directionalLight.position.set( 0, globals.boxDimensions.x, 0 );
+    const directionalLight = new THREE.DirectionalLight( GLOBALS.lightColor, 2.5 );
+    directionalLight.position.set( 0, GLOBALS.boxDimensions.x+1, 0 );
     directionalLight.castShadow = true;
     // directionalLight.shadow.blurSamples = 10;
     // directionalLight.shadow.radius = 5;
-    directionalLight.shadow.mapSize.x = globals.lightShadowMapSize;
-    directionalLight.shadow.mapSize.y = globals.lightShadowMapSize;
+    directionalLight.shadow.mapSize.x = GLOBALS.lightShadowMapSize;
+    directionalLight.shadow.mapSize.y = GLOBALS.lightShadowMapSize;
     scene.add( directionalLight );
     // const helper2 = new THREE.DirectionalLightHelper( directionalLight, 1 );
     // scene.add( helper2 );
 
     // room grid
     const room = new THREE.LineSegments(
-        new BoxLineGeometry( globals.boxDimensions.x, globals.boxDimensions.y, globals.boxDimensions.z, 10, 10, 10 ),
-        new THREE.LineBasicMaterial( { color: globals.wallColor } )
+        new BoxLineGeometry( GLOBALS.boxDimensions.x, GLOBALS.boxDimensions.y, GLOBALS.boxDimensions.z, 10, 10, 10 ),
+        new THREE.LineBasicMaterial( { color: GLOBALS.wallColor } )
     );
-    room.geometry.translate( 0, globals.boxDimensions.x/2, 0 );
+    room.geometry.translate( 0, GLOBALS.boxDimensions.x/2, 0 );
     scene.add( room );
 
     // walls
-    const x = globals.boxDimensions.x;
-    const t = globals.wallThickness/2;
+    const x = GLOBALS.boxDimensions.x;
+    const t = GLOBALS.wallThickness/2;
     createWall(0, -1*t, 0, 0, 0, 0, true); // floor
     createWall(0, x+t, 0, 0, 0, 0); // ceiling
     createWall(0, x/2, -1*(x/2+t), Math.PI/2, 0, 0); // north
@@ -78,44 +106,41 @@ function createScene() {
     createWall(x/2+t, x/2, 0, Math.PI/2, 0, Math.PI/2); // east
     createWall(-1*(x/2+t), x/2, 0, Math.PI/2, 0, Math.PI/2); // west
 
-    // invisible planes
-    planes = []
-    const plane = new THREE.Mesh(
-        new THREE.BoxGeometry(globals.boxDimensions.x, 0.01, globals.boxDimensions.z),
-        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 })
-    );
-    plane.position.set(0, 3, 0);
-    plane.rotation.set(0, 0, 0);
-    scene.add(plane);
-    planes.push(plane);
+    // meshes to intersect with raycaster
+    intersectables = [];
+    
+    // invisible intersectables and boxes
+    const x2 = GLOBALS.boxDimensions.x/2;
+    createPlane(0, x2, 0, 0, 0, 0)
+    createPlane(0, x2, 0, Math.PI/2, 0, 0);
+    createPlane(0, x2, 0, 0, 0, Math.PI/2);
 
-    const plane2 = plane.clone();
-    plane2.position.set(0, 3, 0);
-    plane2.rotation.set(Math.PI/2, 0, 0);
-    scene.add(plane2);
-    planes.push(plane2);
-
-    const plane3 = plane.clone();
-    plane3.position.set(0, 3, 0);
-    plane3.rotation.set(0, 0, Math.PI/2);
-    scene.add(plane3);
-    planes.push(plane3);
-
+    const x4 = GLOBALS.boxDimensions.x/4;
+    createBox(x4, x4, x4);
+    createBox(x4, x4, -1*x4);
+    createBox(x4, x2+x4, x4);
+    createBox(x4, x2+x4, -1*x4);
+    createBox(-1*x4, x4, x4);
+    createBox(-1*x4, x4, -1*x4);
+    createBox(-1*x4, x2+x4, x4);
+    createBox(-1*x4, x2+x4, -1*x4);
 }
 
 function launchObject(position, direction) {
     if (guiOptions.shape != 'None') {
-        let mesh, collider;
-        const material = new THREE.MeshPhongMaterial({ color: guiOptions.color });
-        const size = guiOptions.size;
+        let mesh, colliderDesc;
+        const color = guiOptions.color;
+        const material = new THREE.MeshPhongMaterial({ color: color });
+        const size = guiOptions.size * GLOBALS.object.sizeScale;
+        const shape = guiOptions.shape;
 
-        switch(guiOptions.shape) {
+        switch(shape) {
             case 'Sphere':
                 mesh = new THREE.Mesh(
                     new THREE.SphereGeometry(size),
                     material
                 );
-                collider = RAPIER.ColliderDesc.ball(size);
+                colliderDesc = RAPIER.ColliderDesc.ball(size);
                 break;
             case 'Pyramid':
                 mesh = new THREE.Mesh(
@@ -123,15 +148,14 @@ function launchObject(position, direction) {
                     material
                 );
                 const points = new Float32Array(mesh.geometry.attributes.position.array);
-                console.log(points);
-                collider = RAPIER.ColliderDesc.convexHull(points);
+                colliderDesc = RAPIER.ColliderDesc.convexHull(points);
                 break;
             case 'Cube':
                 mesh = new THREE.Mesh(
                     new THREE.BoxGeometry(size, size, size),
                     material
                 );
-                collider = RAPIER.ColliderDesc.cuboid(size/2, size/2, size/2);
+                colliderDesc = RAPIER.ColliderDesc.cuboid(size/2, size/2, size/2);
                 break;
         }
 
@@ -139,35 +163,95 @@ function launchObject(position, direction) {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
-        const velocity = direction.clone().multiplyScalar(globals.launchVelocityFactor);
+        let velocity;
+        if (velocities.length == 0) {
+            velocity = direction.clone().multiplyScalar(GLOBALS.launchVelocityFactor);
+        }
+        else {
+            velocity = {x: 0, y: 0, z: 0};
+        }
         const rigidBody = world.createRigidBody(
             RAPIER.RigidBodyDesc.dynamic()
             .setTranslation(position.x, position.y, position.z)
             .setLinvel(velocity.x, velocity.y, velocity.z)
+            .setLinearDamping(guiOptions.linearDamping)
+            .setAngularDamping(guiOptions.angularDamping)
+            .setCanSleep(false)
             .setCcdEnabled(true)
         );
+        if (velocities.length > 0) {
+            rigidBody.lockTranslations(true);
+            rigidBody.lockRotations(true);
+        }
 
-        collider.setDensity(globals.objectDensity)
-            .setRestitution(globals.objectRestitution)
+        colliderDesc.setDensity(GLOBALS.object.density)
+            .setRestitution(GLOBALS.object.restitution)
             .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max)
-            .setFriction(globals.objectFriction)
-            .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
-        world.createCollider(collider, rigidBody);
-        dynamicBodies.push([mesh, rigidBody]);
+            .setFriction(GLOBALS.object.friction)
+            .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+            .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+        const collider = world.createCollider(colliderDesc, rigidBody);
+        
+        objects.set(collider.handle, [mesh, rigidBody, shape, guiOptions.size, color]);
+        if (velocities.length > 0) {
+            velocities.push([0, 0, 0]);
+        }
 
         scene.add(mesh);
+        intersectables.push(mesh);
     }
 }
 
+function destroyObject(key) {
+    const value = objects.get(key);
+    const threeMesh = value[0];
+    const rapierBody = value[1];
+    threeMesh.geometry.dispose();
+    threeMesh.material.dispose();
+    threeMesh.removeFromParent();
+    world.removeRigidBody(rapierBody);
+    objects.delete(key);
+}
+
 function destroyObjects() {
-    while (dynamicBodies.length > 0) {
-        const db = dynamicBodies.pop();
-        const threeMesh = db[0];
-        const rapierBody = db[1];
-        threeMesh.geometry.dispose();
-        threeMesh.material.dispose();
-        threeMesh.removeFromParent();
-        world.removeRigidBody(rapierBody);
+    for (let [key, value] of objects) {
+        if (value) {
+            const threeMesh = value[0];
+            const rapierBody = value[1];
+            threeMesh.geometry.dispose();
+            threeMesh.material.dispose();
+            threeMesh.removeFromParent();
+            world.removeRigidBody(rapierBody);
+            objects.delete(key);
+        }
+    }
+    velocities = [];
+}
+
+function pauseResume() {
+    if (velocities.length == 0) {
+        for (let [key, value] of objects) {
+            if (value) {
+                const vel = value[1].linvel();
+                velocities.push([vel.x, vel.y, vel.z]);
+                value[1].setLinvel({x: 0, y: 0, z: 0}, true);
+                value[1].lockTranslations(true);
+                value[1].lockRotations(true);
+            }
+        }
+        console.log('paused');
+    }
+    else {
+        for (let [key, value] of objects) {
+            if (value) {
+                const vel = velocities.shift();
+                value[1].setLinvel({x: vel[0], y: vel[1], z: vel[2]}, true);
+                value[1].lockTranslations(false);
+                value[1].lockRotations(false);
+            }
+        }
+        velocities = [];
+        console.log('resumed');
     }
 }
 
@@ -184,32 +268,57 @@ function init() {
 
     gravity = new RAPIER.Vector3(0.0, -9.8, 0.0);
     world = new RAPIER.World(gravity);
-    dynamicBodies = [];
+    objects = new Map();
+    velocities = [];
+    eventQueue = new RAPIER.EventQueue(true);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.z = 3;
-    camera.position.y = 3;
+    camera.position.z = GLOBALS.boxDimensions.z/2;
+    camera.position.y = GLOBALS.boxDimensions.y/2;
 
     stats = new Stats();
     document.body.appendChild(stats.dom);
 
     const gui = new GUI();
     guiOptions = {
-        shape: 'None',
-        size: 0.3,
+        shape: 'Sphere',
+        size: GLOBALS.object.sizeDefault,
         color: 0x000000,
-        gravity: true,
+        linearDamping: 0.0,
+        angularDamping: 0.0,
+        gravity: 'Normal',
         reset: function() { destroyObjects(); }
     };
-    gui.add(guiOptions, 'shape', ['None', 'Sphere', 'Pyramid', 'Cube']);
-    gui.add(guiOptions, 'size', 0.1, 1, 0.01);
-    gui.addColor(guiOptions, 'color');
-    gui.add(guiOptions, 'gravity' ).onChange( value => {
-        if (value) {
-            world.gravity.y = -9.8;
+    const objectFolder = gui.addFolder('Object');
+    const physicsFolder = gui.addFolder('Physics');
+    objectFolder.add(guiOptions, 'shape', ['Sphere', 'Pyramid', 'Cube']);
+    objectFolder.add(guiOptions, 'size', GLOBALS.object.sizeLow, GLOBALS.object.sizeHigh, 1);
+    objectFolder.addColor(guiOptions, 'color');
+    physicsFolder.add(guiOptions, 'linearDamping', 0.0, 1, 0.01).onFinishChange( val => {
+        for (let [key, value] of objects) {
+            if (value) {
+                value[1].setLinearDamping(val);
+            }
         }
-        else {
-            world.gravity.y = 0;
+    });
+    physicsFolder.add(guiOptions, 'angularDamping', 0.0, 1, 0.01).onFinishChange( val => {
+        for (let [key, value] of objects) {
+            if (value) {
+                value[1].setAngularDamping(val);
+            }
+        }
+    });
+    physicsFolder.add(guiOptions, 'gravity', ['Normal', 'Off', 'Reverse']).onChange( val => {
+        switch (val) {
+            case 'Normal':
+                world.gravity.y = -9.8;
+                break;
+            case 'Off':
+                world.gravity.y = 0;
+                break;
+            case 'Reverse':
+                world.gravity.y = 9.8;
+                break;
         }
     } );
     gui.add(guiOptions, 'reset');
@@ -219,21 +328,44 @@ function init() {
     controls.maxDistance = 10;
     controls.target.y = 1.6;
     
-    const raycaster = new THREE.Raycaster()
-    const mouse = new THREE.Vector2()
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    mouseDownTime = performance.now();
 
-    renderer.domElement.addEventListener('click', (e) => {
-        mouse.set((e.clientX / renderer.domElement.clientWidth) * 2 - 1, -(e.clientY / renderer.domElement.clientHeight) * 2 + 1);
+    renderer.domElement.addEventListener('mousedown', (e) => {
+        mouseDownTime = performance.now();
+    });
 
-        raycaster.setFromCamera(mouse, camera);
+    renderer.domElement.addEventListener('mouseup', (e) => {
+        if (performance.now() - mouseDownTime < GLOBALS.mouseClickMS) {
+            mouse.set((e.clientX / renderer.domElement.clientWidth) * 2 - 1, -(e.clientY / renderer.domElement.clientHeight) * 2 + 1);
 
-        const intersects = raycaster.intersectObjects(planes, false);
+            raycaster.setFromCamera(mouse, camera);
 
-        if (intersects.length) {
-            const furthest = intersects.pop();
-            const point = furthest.point.clone();
-            const direction = raycaster.ray.direction.clone();
-            launchObject(point, direction);
+            const intersects = raycaster.intersectObjects(intersectables, false);
+
+            if (intersects.length) {
+                for (let i of intersects) {
+                    for (let [key, value] of objects) {
+                        if (value && value[0].id == i.object.id) {
+                            destroyObject(key);
+                            return;
+                        }
+                    }
+                }
+                const intersection = intersects.pop();
+                // const intersection = intersects[0];
+                const point = intersection.point.clone();
+                const direction = raycaster.ray.direction.clone();
+                launchObject(point, direction);
+            }
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key == ' ' || e.code == "Space") {
+            e.preventDefault();
+            pauseResume();
         }
     })
 
@@ -243,12 +375,38 @@ function init() {
 function animate() {
 
     world.timestep = clock.getDelta();
-	world.step();
+	world.step(eventQueue);
 
-    for (let i = 0; i < dynamicBodies.length; i++) {
-        dynamicBodies[i][0].position.copy(dynamicBodies[i][1].translation());
-        dynamicBodies[i][0].quaternion.copy(dynamicBodies[i][1].rotation());
+    for (let [key, value] of objects) {
+        if (value) {
+            value[0].position.copy(value[1].translation());
+            value[0].quaternion.copy(value[1].rotation());
+        }
     }
+
+    eventQueue.drainCollisionEvents((handle1, handle2, started) => {
+        if (started) {
+            const object1 = objects.get(handle1);
+            const object2 = objects.get(handle2);
+            if (object1) {
+                const shape = object1[2];
+                const size = object1[3];
+                const color = object1[4];
+                const pos = object1[0].position;
+                // console.log(`${shape}, ${size}, ${color}`);
+                sound.beep(shape, size, color, pos);
+            }
+            if (object2) {
+                const shape = object2[2];
+                const size = object2[3];
+                const color = object2[4];
+                const pos = object2[0].position;
+                // console.log(`${shape}, ${size}, ${color}`);
+                sound.beep(shape, size, color, pos);
+            }
+        }
+    
+    });
 
     controls.update();
 
