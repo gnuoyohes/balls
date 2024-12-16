@@ -21,6 +21,7 @@ const GLOBALS = {
         octaveHigh: 7,
         volLow: -18,
         volHigh: -4,
+        nSynths: 50
     }
 };
 

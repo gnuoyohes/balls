@@ -23,17 +23,25 @@ const reverb = new Tone.Reverb({
     wet: 0.8
 }).toDestination();
 
-const sineSynth = new Tone.MonoSynth({
-    oscillator: {
-        type: "sine"
-    },
-    envelope: {
-        attack: 0.1,
-        decay: 0.1,
-        sustain: 0.1,
-        release: 0.1,
-    }
-}).connect(reverb);
+let synths = [];
+
+for (let i=0; i<GLOBALS.sound.nSynths; i++) {
+    const pan = -1 + i * 2.0 / (GLOBALS.sound.nSynths - 1);
+    const panVol = new Tone.PanVol(pan, 0).connect(reverb);
+    const sineSynth = new Tone.MonoSynth({
+        oscillator: {
+            type: "sine"
+        },
+        envelope: {
+            attack: 0.1,
+            decay: 0.1,
+            sustain: 0.1,
+            release: 0.1,
+        }
+    }).connect(panVol);
+
+    synths.push(sineSynth);
+}
 
 function getVolume(size) {
     return GLOBALS.sound.volLow + (size - GLOBALS.object.sizeLow)
@@ -42,7 +50,7 @@ function getVolume(size) {
 }
 
 function getNote(position, scale) {
-    const x = position.x, y = position.y, z = position.z;
+    const y = position.y, z = position.z;
     const octave = GLOBALS.sound.octaveLow
         + Math.round(y / GLOBALS.boxDimensions.y * (GLOBALS.sound.octaveHigh - GLOBALS.sound.octaveLow));
     const noteIndex = Math.floor((-1*z + GLOBALS.boxDimensions.z/2)/GLOBALS.boxDimensions.z * scale.length);
@@ -50,7 +58,6 @@ function getNote(position, scale) {
 }
 
 export function beep(shape, size, color, position) {
-    
     const scale = [];
     for (let e of sets.pentatonic) {
         const rootDegree = chromaticScale.indexOf(root);
@@ -59,10 +66,16 @@ export function beep(shape, size, color, position) {
     }
     const volume = getVolume(size);
     const note = getNote(position, scale);
+
+    const x = position.x;
+    const synthIndex = Math.floor((x + GLOBALS.boxDimensions.x/2) / GLOBALS.boxDimensions.x * GLOBALS.sound.nSynths);
+    console.log(synthIndex);
+    const synth = synths[synthIndex];
+
     switch (shape) {
         case 'Sphere':
-            sineSynth.volume.value = volume;
-            sineSynth.triggerAttackRelease(note, "8n");
+            synth.volume.value = volume;
+            synth.triggerAttackRelease(note, "8n");
             break;
     }
 }
