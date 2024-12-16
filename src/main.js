@@ -51,8 +51,8 @@ function createScene() {
 
     function createPlane(pX, pY, pZ, rX, rY, rZ) {
         const plane = new THREE.Mesh(
-            new THREE.BoxGeometry(GLOBALS.boxDimensions.x, 0.01, GLOBALS.boxDimensions.z),
-            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 })
+            new THREE.BoxGeometry(GLOBALS.boxDimensions.x, 0.001, GLOBALS.boxDimensions.z),
+            new THREE.MeshBasicMaterial({ visible: false })
         );
         plane.position.set(pX, pY, pZ);
         plane.rotation.set(rX, rY, rZ);
@@ -63,7 +63,7 @@ function createScene() {
     function createBox(pX, pY, pZ) {
         const box = new THREE.Mesh(
             new THREE.BoxGeometry(GLOBALS.boxDimensions.x/2, GLOBALS.boxDimensions.y/2, GLOBALS.boxDimensions.z/2),
-            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 })
+            new THREE.MeshBasicMaterial({ visible: false })
         );
         box.position.set(pX, pY, pZ);
         scene.add(box);
@@ -78,7 +78,7 @@ function createScene() {
     scene.add( fillLight );
 
     const directionalLight = new THREE.DirectionalLight( GLOBALS.lightColor, 2.5 );
-    directionalLight.position.set( 0, GLOBALS.boxDimensions.x+1, 0 );
+    directionalLight.position.set( 0, GLOBALS.boxDimensions.y, 0 );
     directionalLight.castShadow = true;
     // directionalLight.shadow.blurSamples = 10;
     // directionalLight.shadow.radius = 5;
@@ -96,9 +96,12 @@ function createScene() {
     room.geometry.translate( 0, GLOBALS.boxDimensions.x/2, 0 );
     scene.add( room );
 
-    // walls
     const x = GLOBALS.boxDimensions.x;
+    const y = GLOBALS.boxDimensions.y;
+    const z = GLOBALS.boxDimensions.z;
     const t = GLOBALS.wallThickness/2;
+
+    // walls
     createWall(0, -1*t, 0, 0, 0, 0, true); // floor
     createWall(0, x+t, 0, 0, 0, 0); // ceiling
     createWall(0, x/2, -1*(x/2+t), Math.PI/2, 0, 0); // north
@@ -110,12 +113,25 @@ function createScene() {
     intersectables = [];
     
     // invisible intersectables and boxes
-    const x2 = GLOBALS.boxDimensions.x/2;
-    createPlane(0, x2, 0, 0, 0, 0)
-    createPlane(0, x2, 0, Math.PI/2, 0, 0);
-    createPlane(0, x2, 0, 0, 0, Math.PI/2);
+    // createPlane(0, y/6, 0, 0, 0, 0);
+    // createPlane(0, y/3, 0, 0, 0, 0);
+    // createPlane(0, y/2, 0, 0, 0, 0);
+    // createPlane(0, 2*y/3, 0, 0, 0, 0);
+    // createPlane(0, 5*y/6, 0, 0, 0, 0);
 
-    const x4 = GLOBALS.boxDimensions.x/4;
+    // createPlane(0, y/2, -1*z/3, Math.PI/2, 0, 0);
+    // createPlane(0, y/2, -1*z/6, Math.PI/2, 0, 0);
+    // createPlane(0, y/2, 0, Math.PI/2, 0, 0);
+    // createPlane(0, y/2, 1*z/6, Math.PI/2, 0, 0);
+    // createPlane(0, y/2, 1*z/3, Math.PI/2, 0, 0);
+
+    // createPlane(-1*x/3, y/2, 0, 0, 0, Math.PI/2);
+    // createPlane(-1*x/6, y/2, 0, 0, 0, Math.PI/2);
+    // createPlane(0, y/2, 0, 0, 0, Math.PI/2);
+    // createPlane(1*x/6, y/2, 0, 0, 0, Math.PI/2);
+    // createPlane(1*x/3, y/2, 0, 0, 0, Math.PI/2);
+
+    const x2 = x/2, x4 = x/4;
     createBox(x4, x4, x4);
     createBox(x4, x4, -1*x4);
     createBox(x4, x2+x4, x4);
@@ -202,26 +218,25 @@ function launchObject(position, direction) {
     }
 }
 
-function destroyObject(key) {
-    const value = objects.get(key);
-    const threeMesh = value[0];
-    const rapierBody = value[1];
+function dispose(object) {
+    const threeMesh = object[0];
+    const rapierBody = object[1];
     threeMesh.geometry.dispose();
     threeMesh.material.dispose();
     threeMesh.removeFromParent();
     world.removeRigidBody(rapierBody);
+}
+
+function destroyObject(key) {
+    const value = objects.get(key);
+    dispose(value);
     objects.delete(key);
 }
 
 function destroyObjects() {
     for (let [key, value] of objects) {
         if (value) {
-            const threeMesh = value[0];
-            const rapierBody = value[1];
-            threeMesh.geometry.dispose();
-            threeMesh.material.dispose();
-            threeMesh.removeFromParent();
-            world.removeRigidBody(rapierBody);
+            dispose(value);
             objects.delete(key);
         }
     }
@@ -255,30 +270,7 @@ function pauseResume() {
     }
 }
 
-function init() {
-    
-    clock = new THREE.Clock();
-
-    renderer = new THREE.WebGLRenderer();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.VSMSoftShadowMap;
-    renderer.setAnimationLoop(animate);
-    document.body.appendChild(renderer.domElement);
-
-    gravity = new RAPIER.Vector3(0.0, -9.8, 0.0);
-    world = new RAPIER.World(gravity);
-    objects = new Map();
-    velocities = [];
-    eventQueue = new RAPIER.EventQueue(true);
-
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.z = GLOBALS.boxDimensions.z/2;
-    camera.position.y = GLOBALS.boxDimensions.y/2;
-
-    stats = new Stats();
-    document.body.appendChild(stats.dom);
-
+function createGUI() {
     const gui = new GUI();
     guiOptions = {
         shape: 'Sphere',
@@ -287,10 +279,20 @@ function init() {
         linearDamping: 0.0,
         angularDamping: 0.0,
         gravity: 'Normal',
-        reset: function() { destroyObjects(); }
+        root: GLOBALS.sound.rootDefault,
+        scale: GLOBALS.sound.scaleDefault,
+        resetCamera: function() {
+            camera.position.z = GLOBALS.boxDimensions.z/2;
+            camera.position.y = GLOBALS.boxDimensions.y/2 + 1;
+            controls.reset();
+            controls.target.y = 1.6;
+        },
+        resetObjects: function() { destroyObjects(); }
+    
     };
     const objectFolder = gui.addFolder('Object');
     const physicsFolder = gui.addFolder('Physics');
+    const soundFolder = gui.addFolder('Sound');
     objectFolder.add(guiOptions, 'shape', ['Sphere', 'Pyramid', 'Cube']);
     objectFolder.add(guiOptions, 'size', GLOBALS.object.sizeLow, GLOBALS.object.sizeHigh, 1);
     objectFolder.addColor(guiOptions, 'color');
@@ -321,9 +323,44 @@ function init() {
                 break;
         }
     } );
-    gui.add(guiOptions, 'reset');
+    soundFolder.add(guiOptions, 'root', GLOBALS.sound.chromaticScale).onFinishChange( val => {
+        sound.changeScale(val, guiOptions.scale);
+    });
+    soundFolder.add(guiOptions, 'scale', Array.from(Object.keys(GLOBALS.sound.sets))).onFinishChange( val => {
+        sound.changeScale(guiOptions.root, val);
+    });
+    gui.add(guiOptions, 'resetCamera');
+    gui.add(guiOptions, 'resetObjects');
+}
+
+function init() {
+    
+    clock = new THREE.Clock();
+
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.VSMSoftShadowMap;
+    renderer.setAnimationLoop(animate);
+    document.body.appendChild(renderer.domElement);
+
+    gravity = new RAPIER.Vector3(0.0, -9.8, 0.0);
+    world = new RAPIER.World(gravity);
+    objects = new Map();
+    velocities = [];
+    eventQueue = new RAPIER.EventQueue(true);
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = GLOBALS.boxDimensions.z/2;
+    camera.position.y = GLOBALS.boxDimensions.y/2 + 1;
+
+    stats = new Stats();
+    document.body.appendChild(stats.dom);
+
+    createGUI();
 
     controls = new OrbitControls(camera, renderer.domElement);
+    controls.saveState();
     controls.enableDamping = true;
     controls.maxDistance = 10;
     controls.target.y = 1.6;
@@ -333,11 +370,11 @@ function init() {
     mouseDownTime = performance.now();
 
     renderer.domElement.addEventListener('mousedown', (e) => {
-        mouseDownTime = performance.now();
+        if (e.button == 0) mouseDownTime = performance.now();
     });
 
     renderer.domElement.addEventListener('mouseup', (e) => {
-        if (performance.now() - mouseDownTime < GLOBALS.mouseClickMS) {
+        if (e.button == 0 && performance.now() - mouseDownTime < GLOBALS.mouseClickMS) {
             mouse.set((e.clientX / renderer.domElement.clientWidth) * 2 - 1, -(e.clientY / renderer.domElement.clientHeight) * 2 + 1);
 
             raycaster.setFromCamera(mouse, camera);
@@ -354,7 +391,6 @@ function init() {
                     }
                 }
                 const intersection = intersects.pop();
-                // const intersection = intersects[0];
                 const point = intersection.point.clone();
                 const direction = raycaster.ray.direction.clone();
                 launchObject(point, direction);
@@ -362,12 +398,12 @@ function init() {
         }
     });
 
-    document.addEventListener('keydown', (e) => {
+    window.addEventListener('keyup', (e) => {
         if (e.key == ' ' || e.code == "Space") {
             e.preventDefault();
             pauseResume();
         }
-    })
+    });
 
     createScene();
 }
