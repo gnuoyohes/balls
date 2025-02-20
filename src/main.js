@@ -12,6 +12,7 @@ import RAPIER from '@dimforge/rapier3d-compat'
 let scene, camera, controls, renderer;
 let clock;
 let stats, guiOptions;
+let room;
 let intersectables; // THREE objects used for raycast
 
 // RAPIER
@@ -89,7 +90,7 @@ function createScene() {
     // scene.add( helper2 );
 
     // room grid
-    const room = new THREE.LineSegments(
+    room = new THREE.LineSegments(
         new BoxLineGeometry( GLOBALS.boxDimensions.x, GLOBALS.boxDimensions.y, GLOBALS.boxDimensions.z, 10, 10, 10 ),
         new THREE.LineBasicMaterial( { color: GLOBALS.wallColor } )
     );
@@ -287,30 +288,31 @@ function createGUI() {
             controls.reset();
             controls.target.y = 1.6;
         },
-        resetObjects: function() { destroyObjects(); }
+        resetObjects: function() { destroyObjects(); },
+        showRoom: true
     
     };
     const objectFolder = gui.addFolder('Object');
     const physicsFolder = gui.addFolder('Physics');
     const soundFolder = gui.addFolder('Sound');
-    objectFolder.add(guiOptions, 'shape', ['Sphere', 'Pyramid', 'Cube']);
-    objectFolder.add(guiOptions, 'size', GLOBALS.object.sizeLow, GLOBALS.object.sizeHigh, 1);
-    objectFolder.addColor(guiOptions, 'color');
-    physicsFolder.add(guiOptions, 'linearDamping', 0.0, 1, 0.01).onFinishChange( val => {
+    objectFolder.add(guiOptions, 'shape', ['Sphere', 'Pyramid', 'Cube']).name('Shape');
+    objectFolder.add(guiOptions, 'size', GLOBALS.object.sizeLow, GLOBALS.object.sizeHigh, 1).name('Size');
+    objectFolder.addColor(guiOptions, 'color').name('Color');
+    physicsFolder.add(guiOptions, 'linearDamping', 0.0, 1, 0.01).name('Linear Damping').onFinishChange( val => {
         for (let [key, value] of objects) {
             if (value) {
                 value[1].setLinearDamping(val);
             }
         }
     });
-    physicsFolder.add(guiOptions, 'angularDamping', 0.0, 1, 0.01).onFinishChange( val => {
+    physicsFolder.add(guiOptions, 'angularDamping', 0.0, 1, 0.01).name('Angular Damping').onFinishChange( val => {
         for (let [key, value] of objects) {
             if (value) {
                 value[1].setAngularDamping(val);
             }
         }
     });
-    physicsFolder.add(guiOptions, 'gravity', ['Normal', 'Off', 'Reverse']).onChange( val => {
+    physicsFolder.add(guiOptions, 'gravity', ['Normal', 'Off', 'Reverse']).name('Gravity').onChange( val => {
         switch (val) {
             case 'Normal':
                 world.gravity.y = -9.8;
@@ -323,14 +325,17 @@ function createGUI() {
                 break;
         }
     } );
-    soundFolder.add(guiOptions, 'root', GLOBALS.sound.chromaticScale).onFinishChange( val => {
+    soundFolder.add(guiOptions, 'root', GLOBALS.sound.chromaticScale).name('Root').onFinishChange( val => {
         sound.changeScale(val, guiOptions.scale);
     });
-    soundFolder.add(guiOptions, 'scale', Array.from(Object.keys(GLOBALS.sound.sets))).onFinishChange( val => {
+    soundFolder.add(guiOptions, 'scale', Array.from(Object.keys(GLOBALS.sound.sets))).name('Scale').onFinishChange( val => {
         sound.changeScale(guiOptions.root, val);
     });
-    gui.add(guiOptions, 'resetCamera');
-    gui.add(guiOptions, 'resetObjects');
+    gui.add(guiOptions, 'resetCamera').name('Reset Camera');
+    gui.add(guiOptions, 'resetObjects').name('Reset Objects');
+    gui.add(guiOptions, 'showRoom').name('Show Room').onChange( value => {
+		room.visible = value;
+	} );;
 }
 
 function init() {
