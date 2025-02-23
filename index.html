@@ -2,13 +2,39 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/balls/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/balls/cube.svg" />
+    <link href="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.css" rel="stylesheet" />
+    <!-- <link rel="stylesheet" href="styles.css"> -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BALLS</title>
-    <script type="module" crossorigin src="/balls/assets/index-DaCdUK-P.js"></script>
-    <link rel="stylesheet" crossorigin href="/balls/assets/index-TZrNw7dA.css">
+    <script type="module" crossorigin src="/balls/assets/index-BCp7ZIr1.js"></script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+    </div>
+    <div class="absolute top-6 left-8">
+      <div id="open-info-btn" class="hidden">
+        <button type="button" class="absolute cursor-pointer text-gray-500 border-2 border-gray-500 hover:bg-gray-500 hover:text-white font-bold rounded-full p-3 text-center inline-flex items-center">
+          <svg class="w-6 h-6" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24">
+            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7 7V5"/>
+          </svg>
+          <span class="sr-only">Open</span>
+        </button>
+      </div>
+      <div id="info-card" class="hidden block max-w-sm p-6 bg-white/50 border border-gray-200 rounded-lg shadow-sm">
+        <h5 class="mb-2 text-4xl font-bold text-gray-900 dark:text-white">Balls</h5>
+        <button type="button" id="close-info-btn" class="cursor-pointer absolute top-6 right-6 text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ms-auto inline-flex justify-center items-center dark:hover:bg-gray-600 dark:hover:text-white" data-modal-hide="default-modal">
+          <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14">
+              <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
+          </svg>
+          <span class="sr-only">Close</span>
+        </button>
+        <!-- <h5 class="mb-2 text-xl text-gray-700 dark:text-white">by Seho Young</h5> -->
+        <p class="font-normal text-gray-700">Click on room to send balls, click on balls to destroy them. Press space to pause/resume.</p>
+        <div id="stats"></div>
+      </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/flowbite@3.1.2/dist/flowbite.min.js"></script>
   </body>
 </html>
