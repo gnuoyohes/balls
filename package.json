@@ -21,6 +21,7 @@
 	"dependencies": {
 		"@dimforge/rapier3d-compat": "^0.14.0",
 		"@tailwindcss/vite": "^4.0.7",
+		"motion": "^12.4.7",
 		"three": "^0.171.0",
 		"tone": "^15.0.4"
 	}
