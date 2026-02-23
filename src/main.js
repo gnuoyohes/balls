@@ -357,7 +357,7 @@ function init() {
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
     camera.position.z = GLOBALS.boxDimensions.z/2
-    camera.position.y = GLOBALS.boxDimensions.y/2 + 1
+    camera.position.y = GLOBALS.boxDimensions.y/2 + 2
 
     stats = new Stats()
     stats.dom.style.position = 'relative'
@@ -370,7 +370,7 @@ function init() {
     controls.saveState()
     controls.enableDamping = true
     controls.maxDistance = 10
-    controls.target.y = 1.6
+    controls.target.y = 3
     
     const raycaster = new THREE.Raycaster()
     const mouse = new THREE.Vector2()
